@@ -1,4 +1,8 @@
 (() => {
+  const INJECTION_FLAG = "__clearlingoContentInjected";
+  if (globalThis[INJECTION_FLAG]) return;
+  globalThis[INJECTION_FLAG] = true;
+
   const BLOCK_SELECTOR = "p, li, blockquote, figcaption, h1, h2, h3, h4, h5, h6, td, th, dd, dt";
   const EXCLUDED_SELECTOR = [
     "nav", "header", "footer", "aside", "form", "dialog",
@@ -7,14 +11,66 @@
     "[aria-hidden='true']", ".clearlingo-managed", ".clearlingo-ui"
   ].join(",");
   const BATCH_SIZE = 8;
+  const LAZY_LOAD_MARGIN = 800;
+  const TRANSLATION_QUEUE_DELAY = 80;
+  const DYNAMIC_SCAN_DELAY = 250;
+
+  class ElementQueue {
+    constructor() {
+      this.items = [];
+      this.head = 0;
+      this.members = new Set();
+    }
+
+    get size() {
+      return this.members.size;
+    }
+
+    add(element) {
+      if (this.members.has(element)) return false;
+      this.members.add(element);
+      this.items.push(element);
+      return true;
+    }
+
+    take(limit) {
+      const batch = [];
+      while (this.head < this.items.length && batch.length < limit) {
+        const element = this.items[this.head++];
+        if (!this.members.delete(element)) continue;
+        batch.push(element);
+      }
+      if (this.head > 512 && this.head * 2 > this.items.length) {
+        this.items = this.items.slice(this.head);
+        this.head = 0;
+      }
+      return batch;
+    }
+
+    clear() {
+      this.items.length = 0;
+      this.head = 0;
+      this.members.clear();
+    }
+  }
   const state = {
     active: false,
     busy: false,
     settings: null,
     observer: null,
-    translated: new Set(),
-    queue: new Set(),
+    visibilityObserver: null,
+    translated: new Map(),
+    linkHosts: new Map(),
+    waiting: new Set(),
+    queue: new ElementQueue(),
+    queuePaused: false,
     queueTimer: null,
+    scanQueue: new Set(),
+    scanTimer: null,
+    scanUsesIdleCallback: false,
+    translationTask: null,
+    startTask: null,
+    sessionId: 0,
     sourceLanguage: "en",
     localTranslator: null
   };
@@ -85,7 +141,6 @@
     if (!(element instanceof HTMLElement)) return false;
     if (element.closest(EXCLUDED_SELECTOR)) return false;
     if (element.querySelector(BLOCK_SELECTOR)) return false;
-    if (!element.getClientRects().length) return false;
 
     const text = normalizeText(element.textContent ?? "");
     if (text.length < 2 || text.length > 12000) return false;
@@ -114,66 +169,263 @@
     return host;
   }
 
-  function showToast(message, tone = "default") {
+  function showToast(message, tone = "default", { duration = 2400 } = {}) {
     const toast = createToast();
     toast.textContent = message;
     toast.dataset.tone = tone;
     toast.classList.add("clearlingo-ui-visible");
     clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => toast.classList.remove("clearlingo-ui-visible"), 2400);
+    showToast.timer = null;
+    if (duration > 0) {
+      showToast.timer = setTimeout(() => toast.classList.remove("clearlingo-ui-visible"), duration);
+    }
   }
 
-  function renderTranslation(element, translatedText) {
-    if (!element.isConnected || state.translated.has(element)) return;
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      const input = document.createElement("textarea");
+      input.className = "clearlingo-copy-fallback";
+      input.value = text;
+      document.documentElement.append(input);
+      input.select();
+      const copied = document.execCommand("copy");
+      input.remove();
+      if (!copied) throw new Error("复制失败，请手动选择译文复制");
+    }
+  }
 
-    const original = document.createElement("span");
-    original.className = "clearlingo-original";
-    while (element.firstChild) original.append(element.firstChild);
-
+  function createTranslation(translatedText) {
     const translation = document.createElement("span");
     translation.className = "clearlingo-translation";
     translation.lang = state.settings.targetLanguage;
     translation.dir = "auto";
-    translation.textContent = translatedText;
 
-    element.classList.add("clearlingo-managed");
-    element.dataset.clearlingoDisplay = state.settings.displayMode;
-    element.append(original, translation);
-    state.translated.add(element);
+    const text = document.createElement("span");
+    text.className = "clearlingo-translation-text";
+    text.textContent = translatedText;
+
+    const copyButton = document.createElement("button");
+    copyButton.className = "clearlingo-copy clearlingo-ui-control";
+    copyButton.type = "button";
+    copyButton.textContent = "复制";
+    copyButton.setAttribute("aria-label", "复制这段译文");
+    copyButton.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        await copyText(translatedText);
+        copyButton.textContent = "已复制";
+        setTimeout(() => {
+          if (copyButton.isConnected) copyButton.textContent = "复制";
+        }, 1400);
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    });
+
+    translation.append(text, copyButton);
+    return translation;
   }
 
-  async function translateElements(elements, { quiet = false } = {}) {
-    const pending = elements.filter((element) => !state.translated.has(element));
-    if (!pending.length) return;
+  function getLinkHost(anchor) {
+    let host = state.linkHosts.get(anchor);
+    if (host?.isConnected) return host;
+    host = document.createElement("span");
+    host.className = "clearlingo-detached-host clearlingo-managed";
+    host.dataset.clearlingoDisplay = state.settings.displayMode;
+    anchor.after(host);
+    state.linkHosts.set(anchor, host);
+    return host;
+  }
 
-    for (let start = 0; start < pending.length && state.active; start += BATCH_SIZE) {
-      const batch = pending.slice(start, start + BATCH_SIZE);
-      const texts = batch.map((element) => normalizeText(element.textContent ?? ""));
-      let translations;
+  function renderTranslation(element, translatedText, sessionId) {
+    if (!state.active || sessionId !== state.sessionId || !element.isConnected || state.translated.has(element)) return;
+    const translation = createTranslation(translatedText);
+    const enclosingLink = element.closest("a[href]");
 
-      if (state.localTranslator) {
+    if (enclosingLink) {
+      const host = getLinkHost(enclosingLink);
+      host.append(translation);
+      enclosingLink.classList.add("clearlingo-linked-source");
+      enclosingLink.classList.toggle("clearlingo-source-hidden", state.settings.displayMode === "translation");
+      state.translated.set(element, { kind: "detached", translation, enclosingLink });
+      return;
+    }
+
+    const original = document.createElement("span");
+    original.className = "clearlingo-original";
+    element.classList.add("clearlingo-managed");
+    element.dataset.clearlingoDisplay = state.settings.displayMode;
+    while (element.firstChild) original.append(element.firstChild);
+    element.append(original, translation);
+    state.translated.set(element, { kind: "inline", original, translation });
+  }
+
+  async function translateBatch(batch, sessionId) {
+    const texts = batch.map((element) => normalizeText(element.textContent ?? ""));
+    let translations;
+    const localTranslator = state.localTranslator;
+
+    if (localTranslator) {
+      try {
+        translations = await Promise.all(texts.map((text) => localTranslator.translate(text)));
+      } catch {
+        localTranslator.destroy?.();
+        if (state.localTranslator === localTranslator) state.localTranslator = null;
+        if (!state.active || sessionId !== state.sessionId) return null;
+        if (state.settings.onlineFallback) showToast("本地翻译不可用，已切换在线服务");
+      }
+    }
+
+    if (!translations) {
+      if (!state.settings.onlineFallback) {
+        throw new Error("浏览器本地翻译不可用，请在扩展面板中开启在线翻译兜底");
+      }
+      if (!state.active || sessionId !== state.sessionId) return null;
+      const response = await chrome.runtime.sendMessage({
+        type: "CLEARLINGO_TRANSLATE_TEXTS",
+        texts,
+        sourceLanguage: state.sourceLanguage,
+        targetLanguage: state.settings.targetLanguage,
+        sessionId
+      });
+      if (!response?.ok) throw new Error(response?.error || "翻译失败");
+      translations = response.translations;
+    }
+
+    return translations;
+  }
+
+  function completionMessage() {
+    for (const element of state.waiting) {
+      if (element.isConnected) continue;
+      state.visibilityObserver?.unobserve(element);
+      state.waiting.delete(element);
+    }
+    const suffix = state.waiting.size ? " · 向下滚动将继续翻译" : "";
+    return `当前区域已完成 · ${state.translated.size} 个段落${suffix}`;
+  }
+
+  async function runTranslationQueue(sessionId) {
+    state.busy = true;
+    try {
+      while (state.queue.size && state.active && sessionId === state.sessionId) {
+        const batch = state.queue.take(BATCH_SIZE)
+          .filter((element) => element.isConnected && !state.translated.has(element));
+        if (!batch.length) continue;
+
+        showToast(`正在翻译 · 已完成 ${state.translated.size} 个段落`, "loading", { duration: 0 });
+        let translations;
         try {
-          translations = await Promise.all(texts.map((text) => state.localTranslator.translate(text)));
-        } catch {
-          state.localTranslator.destroy?.();
-          state.localTranslator = null;
-          if (!quiet) showToast("本地翻译不可用，已切换在线服务");
+          translations = await translateBatch(batch, sessionId);
+        } catch (error) {
+          batch.forEach((element) => state.queue.add(element));
+          state.queuePaused = true;
+          throw error;
         }
+        if (!translations || !state.active || sessionId !== state.sessionId) return;
+        batch.forEach((element, index) => renderTranslation(element, translations[index], sessionId));
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
-      if (!translations) {
-        const response = await chrome.runtime.sendMessage({
-          type: "CLEARLINGO_TRANSLATE_TEXTS",
-          texts,
-          sourceLanguage: state.sourceLanguage,
-          targetLanguage: state.settings.targetLanguage
-        });
-        if (!response?.ok) throw new Error(response?.error || "翻译失败");
-        translations = response.translations;
-      }
+      if (state.active && sessionId === state.sessionId) showToast(completionMessage(), "success");
+    } finally {
+      if (state.active && sessionId === state.sessionId) state.busy = false;
+    }
+  }
 
-      batch.forEach((element, index) => renderTranslation(element, translations[index]));
-      if (!quiet) showToast(`正在翻译 ${Math.min(start + batch.length, pending.length)} / ${pending.length}`);
+  async function drainTranslationQueue() {
+    if (state.translationTask) return state.translationTask;
+    const sessionId = state.sessionId;
+    const task = runTranslationQueue(sessionId);
+    state.translationTask = task;
+
+    try {
+      await task;
+    } catch (error) {
+      if (sessionId === state.sessionId && state.active) showToast(error.message, "error", { duration: 4200 });
+    } finally {
+      if (state.translationTask === task) state.translationTask = null;
+      if (state.active && state.queue.size && !state.queuePaused) scheduleTranslation();
+    }
+  }
+
+  function scheduleTranslation(delay = TRANSLATION_QUEUE_DELAY) {
+    if (!state.active || state.queuePaused || !state.queue.size || state.queueTimer || state.translationTask) return;
+    state.queueTimer = setTimeout(() => {
+      state.queueTimer = null;
+      void drainTranslationQueue();
+    }, delay);
+  }
+
+  function enqueueForTranslation(element) {
+    if (!element.isConnected || state.translated.has(element)) return;
+    state.waiting.delete(element);
+    state.visibilityObserver?.unobserve(element);
+    if (state.queue.add(element)) scheduleTranslation();
+  }
+
+  function registerElements(elements) {
+    for (const element of elements) {
+      if (!element.isConnected || state.translated.has(element) || state.waiting.has(element)) continue;
+      if (!state.visibilityObserver) enqueueForTranslation(element);
+      else {
+        state.waiting.add(element);
+        state.visibilityObserver.observe(element);
+      }
+    }
+  }
+
+  function createVisibilityObserver() {
+    state.visibilityObserver?.disconnect();
+    state.visibilityObserver = null;
+    if (!("IntersectionObserver" in globalThis)) return;
+
+    state.visibilityObserver = new IntersectionObserver((entries) => {
+      if (!state.active) return;
+      for (const entry of entries) {
+        if (entry.isIntersecting) enqueueForTranslation(entry.target);
+      }
+    }, {
+      root: null,
+      rootMargin: `${LAZY_LOAD_MARGIN}px 0px`,
+      threshold: 0
+    });
+  }
+
+  function cancelScheduledScan() {
+    if (state.scanTimer === null) return;
+    if (state.scanUsesIdleCallback) cancelIdleCallback(state.scanTimer);
+    else clearTimeout(state.scanTimer);
+    state.scanTimer = null;
+    state.scanUsesIdleCallback = false;
+  }
+
+  function flushScanQueue() {
+    state.scanTimer = null;
+    state.scanUsesIdleCallback = false;
+    if (!state.active) return;
+    const roots = [...state.scanQueue];
+    state.scanQueue.clear();
+    registerElements(roots.flatMap((root) => collect(root)));
+  }
+
+  function scheduleScan(root) {
+    for (const existing of state.scanQueue) {
+      if (existing.contains(root)) return;
+      if (root.contains(existing)) state.scanQueue.delete(existing);
+    }
+    state.scanQueue.add(root);
+    if (state.scanTimer !== null) return;
+
+    if ("requestIdleCallback" in globalThis) {
+      state.scanUsesIdleCallback = true;
+      state.scanTimer = requestIdleCallback(flushScanQueue, { timeout: 1000 });
+    } else {
+      state.scanTimer = setTimeout(flushScanQueue, DYNAMIC_SCAN_DELAY);
     }
   }
 
@@ -184,105 +436,183 @@
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (!(node instanceof HTMLElement) || node.closest(".clearlingo-managed, .clearlingo-ui")) continue;
-          collect(node).forEach((element) => state.queue.add(element));
+          scheduleScan(node);
         }
       }
-
-      if (!state.queue.size || state.queueTimer) return;
-      state.queueTimer = setTimeout(async () => {
-        const queued = [...state.queue];
-        state.queue.clear();
-        state.queueTimer = null;
-        try {
-          await translateElements(queued, { quiet: true });
-        } catch (error) {
-          showToast(error.message, "error");
-        }
-      }, 500);
     });
     state.observer.observe(document.body, { childList: true, subtree: true });
   }
 
   async function start(settings) {
-    if (state.busy) return;
+    if (state.active) return;
     state.busy = true;
     state.active = true;
     state.settings = settings;
+    state.queuePaused = false;
+    const sessionId = ++state.sessionId;
     document.documentElement.classList.add("clearlingo-active");
+    showToast("正在分析网页…", "loading", { duration: 0 });
 
     try {
       const elements = collect();
-      if (!elements.length) {
-        showToast("没有找到可翻译的正文", "error");
-        state.active = false;
-        document.documentElement.classList.remove("clearlingo-active");
+      if (!elements.length) throw new Error("没有找到可翻译的正文");
+      const sample = elements.slice(0, 8)
+        .map((element) => normalizeText(element.textContent ?? ""))
+        .join(" ")
+        .slice(0, 4000);
+      state.sourceLanguage = await detectSourceLanguage(sample);
+      if (normalizeLanguageTag(state.sourceLanguage) === normalizeLanguageTag(settings.targetLanguage)) {
+        throw new Error("页面已经是目标语言");
+      }
+
+      const localTranslator = await prepareLocalTranslator(state.sourceLanguage, settings.targetLanguage);
+      if (!state.active || sessionId !== state.sessionId) {
+        localTranslator?.destroy?.();
         return;
       }
-      const sample = elements.slice(0, 8).map((element) => normalizeText(element.textContent ?? "")).join(" ").slice(0, 4000);
-      state.sourceLanguage = await detectSourceLanguage(sample);
-      state.localTranslator = await prepareLocalTranslator(state.sourceLanguage, settings.targetLanguage);
-      await translateElements(elements);
-      if (state.active) {
-        observePage();
-        showToast(`已翻译 ${state.translated.size} 个段落`, "success");
-      }
+      state.localTranslator = localTranslator;
+      createVisibilityObserver();
+      observePage();
+      registerElements(elements);
+      state.busy = state.queue.size > 0 || state.waiting.size > 0;
+      if (state.queue.size) scheduleTranslation(0);
+      else showToast("翻译已就绪 · 滚动时按需加载", "success");
     } catch (error) {
-      showToast(error.message, "error");
+      if (sessionId !== state.sessionId) return;
       restore({ silent: true });
-      throw error;
-    } finally {
-      state.busy = false;
+      showToast(error.message, "error", { duration: 4200 });
+    }
+  }
+
+  function updateDisplayMode(displayMode) {
+    if (!state.settings || !["bilingual", "translation"].includes(displayMode)) return;
+    state.settings.displayMode = displayMode;
+    for (const [element, record] of state.translated) {
+      if (record.kind === "inline") element.dataset.clearlingoDisplay = displayMode;
+    }
+    for (const [link, host] of state.linkHosts) {
+      host.dataset.clearlingoDisplay = displayMode;
+      link.classList.toggle("clearlingo-source-hidden", displayMode === "translation");
     }
   }
 
   function restore({ silent = false } = {}) {
+    const cancelledSessionId = state.sessionId;
     state.active = false;
+    state.busy = false;
+    state.sessionId += 1;
     state.observer?.disconnect();
     state.observer = null;
+    state.visibilityObserver?.disconnect();
+    state.visibilityObserver = null;
     clearTimeout(state.queueTimer);
+    cancelScheduledScan();
+    state.waiting.clear();
     state.queue.clear();
+    state.queuePaused = false;
     state.queueTimer = null;
+    state.scanQueue.clear();
+    state.translationTask = null;
+    state.startTask = null;
     state.localTranslator?.destroy?.();
     state.localTranslator = null;
+    void chrome.runtime.sendMessage({
+      type: "CLEARLINGO_CANCEL_TRANSLATIONS",
+      sessionId: cancelledSessionId
+    }).catch(() => {});
 
-    for (const element of state.translated) {
-      if (!element.isConnected) continue;
-      const original = element.querySelector(":scope > .clearlingo-original");
-      const translation = element.querySelector(":scope > .clearlingo-translation");
-      if (original) {
-        while (original.firstChild) element.insertBefore(original.firstChild, original);
-        original.remove();
+    for (const [element, record] of state.translated) {
+      if (record.kind === "inline" && element.isConnected) {
+        while (record.original.firstChild) element.insertBefore(record.original.firstChild, record.original);
+        record.original.remove();
+        record.translation.remove();
+        element.classList.remove("clearlingo-managed");
+        delete element.dataset.clearlingoDisplay;
+      } else {
+        record.translation.remove();
       }
-      translation?.remove();
-      element.classList.remove("clearlingo-managed");
-      delete element.dataset.clearlingoDisplay;
+    }
+    for (const [link, host] of state.linkHosts) {
+      host.remove();
+      link.classList.remove("clearlingo-linked-source", "clearlingo-source-hidden");
     }
 
     state.translated.clear();
+    state.linkHosts.clear();
     document.documentElement.classList.remove("clearlingo-active");
     if (!silent) showToast("已还原原网页", "success");
   }
 
   async function getSettings() {
-    return chrome.storage.sync.get({ targetLanguage: "zh-CN", displayMode: "bilingual" });
+    return chrome.storage.sync.get({ targetLanguage: "zh-CN", displayMode: "bilingual", onlineFallback: false });
+  }
+
+  function beginStart(settings) {
+    if (state.active) return;
+    const task = start(settings);
+    state.startTask = task;
+    task.finally(() => {
+      if (state.startTask === task) state.startTask = null;
+    });
   }
 
   async function toggle(settings) {
     if (state.active) restore();
-    else await start(settings ?? await getSettings());
+    else beginStart(settings ?? await getSettings());
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "CLEARLINGO_PING") {
+      sendResponse({ ok: true });
+      return false;
+    }
     if (message?.type === "CLEARLINGO_GET_STATE") {
-      sendResponse({ active: state.active, busy: state.busy, count: state.translated.size });
+      sendResponse({
+        active: state.active,
+        busy: state.busy,
+        count: state.translated.size,
+        waiting: state.waiting.size
+      });
       return false;
     }
     if (message?.type === "CLEARLINGO_RESTORE") {
       restore();
+      sendResponse({ ok: true, active: false, count: 0 });
+      return false;
+    }
+    if (message?.type === "CLEARLINGO_UPDATE_DISPLAY_MODE") {
+      updateDisplayMode(message.displayMode);
       sendResponse({ ok: true });
       return false;
     }
-    if (message?.type === "CLEARLINGO_TRANSLATE_PAGE" || message?.type === "CLEARLINGO_TOGGLE") {
+    if (message?.type === "CLEARLINGO_UPDATE_ONLINE_FALLBACK") {
+      if (state.settings) {
+        state.settings.onlineFallback = Boolean(message.onlineFallback);
+        if (!state.settings.onlineFallback) {
+          void chrome.runtime.sendMessage({
+            type: "CLEARLINGO_CANCEL_TRANSLATIONS",
+            sessionId: state.sessionId
+          }).catch(() => {});
+        } else if (state.queuePaused) {
+          state.queuePaused = false;
+          scheduleTranslation(0);
+        }
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+    if (message?.type === "CLEARLINGO_RESTART") {
+      restore({ silent: true });
+      beginStart(message.settings);
+      sendResponse({ ok: true, active: true, count: 0 });
+      return false;
+    }
+    if (message?.type === "CLEARLINGO_TRANSLATE_PAGE") {
+      beginStart(message.settings);
+      sendResponse({ ok: true, active: true, count: state.translated.size });
+      return false;
+    }
+    if (message?.type === "CLEARLINGO_TOGGLE") {
       toggle(message.settings)
         .then(() => sendResponse({ ok: true, active: state.active, count: state.translated.size }))
         .catch((error) => sendResponse({ ok: false, error: error.message }));
@@ -290,4 +620,16 @@
     }
     return false;
   });
+
+  if (globalThis.__CLEARLINGO_TEST__) {
+    globalThis.__clearlingoTest = {
+      ElementQueue,
+      collect,
+      isTranslatable,
+      renderTranslation,
+      restore,
+      scheduleScan,
+      state
+    };
+  }
 })();

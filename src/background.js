@@ -1,26 +1,40 @@
 import { createMyMemoryTranslator } from "./translator.js";
 
-const translate = createMyMemoryTranslator();
-const cache = new Map();
+const ONLINE_ORIGIN = "https://api.mymemory.translated.net/*";
 const CACHE_LIMIT = 500;
 const CONCURRENCY = 4;
+const MAX_BATCH_SIZE = 32;
+const MAX_TEXT_LENGTH = 12000;
+const translate = createMyMemoryTranslator();
+const cache = new Map();
+const activeRequests = new Map();
 
 function cacheKey(text, sourceLanguage, targetLanguage) {
   return `${sourceLanguage}\u0000${targetLanguage}\u0000${text}`;
 }
 
-async function translateCached(text, sourceLanguage, targetLanguage) {
-  const key = cacheKey(text, sourceLanguage, targetLanguage);
-  if (cache.has(key)) return cache.get(key);
+function readCached(key) {
+  if (!cache.has(key)) return undefined;
+  const value = cache.get(key);
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
 
-  const pending = translate(text, sourceLanguage, targetLanguage).catch((error) => {
-    cache.delete(key);
-    throw error;
-  });
-  cache.set(key, pending);
-
+function writeCached(key, value) {
+  cache.delete(key);
+  cache.set(key, value);
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
-  return pending;
+}
+
+async function translateCached(text, sourceLanguage, targetLanguage, signal) {
+  const key = cacheKey(text, sourceLanguage, targetLanguage);
+  const cached = readCached(key);
+  if (cached !== undefined) return cached;
+
+  const result = await translate(text, sourceLanguage, targetLanguage, { signal });
+  writeCached(key, result);
+  return result;
 }
 
 async function mapConcurrent(items, worker) {
@@ -34,27 +48,109 @@ async function mapConcurrent(items, worker) {
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, run));
+  const workerCount = Math.min(CONCURRENCY, items.length);
+  await Promise.all(Array.from({ length: workerCount }, run));
   return results;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "CLEARLINGO_TRANSLATE_TEXTS") return false;
+function requestKey(tabId, sessionId) {
+  return `${tabId}:${sessionId}`;
+}
 
-  mapConcurrent(message.texts, (text) => translateCached(text, message.sourceLanguage, message.targetLanguage))
+function cancelRequests(tabId, sessionId) {
+  const key = requestKey(tabId, sessionId);
+  for (const controller of activeRequests.get(key) ?? []) controller.abort();
+  activeRequests.delete(key);
+}
+
+function validateTranslationMessage(message) {
+  if (!Array.isArray(message.texts) || message.texts.length === 0 || message.texts.length > MAX_BATCH_SIZE) {
+    throw new Error("翻译批次无效");
+  }
+  if (message.texts.some((text) => typeof text !== "string" || text.length > MAX_TEXT_LENGTH)) {
+    throw new Error("翻译文本无效");
+  }
+  if (typeof message.sourceLanguage !== "string" || typeof message.targetLanguage !== "string") {
+    throw new Error("翻译语言无效");
+  }
+  if (!Number.isInteger(message.sessionId) || message.sessionId < 1) {
+    throw new Error("翻译会话无效");
+  }
+}
+
+export function isInjectableUrl(url = "") {
+  if (!/^(?:https?|file):/iu.test(url)) return false;
+  return !/^https:\/\/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)(?:\/|$)/iu.test(url);
+}
+
+export async function ensureContentScript(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) throw new Error("标签页无效");
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: "CLEARLINGO_PING" });
+    if (response?.ok) return;
+  } catch {
+    // No receiver means the user has not requested injection on this page yet.
+  }
+
+  await chrome.scripting.insertCSS({ target: { tabId }, files: ["src/content.css"] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content.js"] });
+}
+
+async function handleTranslation(message, sender) {
+  validateTranslationMessage(message);
+  if (!sender.tab?.id) throw new Error("无法确认翻译页面");
+  const allowed = await chrome.permissions.contains({ origins: [ONLINE_ORIGIN] });
+  if (!allowed) throw new Error("在线翻译未授权，请在扩展面板中开启在线翻译兜底");
+
+  const key = requestKey(sender.tab.id, message.sessionId);
+  const controller = new AbortController();
+  const controllers = activeRequests.get(key) ?? new Set();
+  controllers.add(controller);
+  activeRequests.set(key, controllers);
+
+  try {
+    return await mapConcurrent(message.texts, (text) => (
+      translateCached(text, message.sourceLanguage, message.targetLanguage, controller.signal)
+    ));
+  } finally {
+    controllers.delete(controller);
+    if (!controllers.size) activeRequests.delete(key);
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "CLEARLINGO_ENSURE_TAB") {
+    ensureContentScript(message.tabId)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === "CLEARLINGO_CANCEL_TRANSLATIONS") {
+    if (sender.tab?.id) cancelRequests(sender.tab.id, message.sessionId);
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type !== "CLEARLINGO_TRANSLATE_TEXTS") return false;
+  handleTranslation(message, sender)
     .then((translations) => sendResponse({ ok: true, translations }))
-    .catch((error) => sendResponse({ ok: false, error: error.message }));
+    .catch((error) => {
+      const cancelled = error?.name === "AbortError";
+      sendResponse({ ok: false, cancelled, error: cancelled ? "翻译已取消" : error.message });
+    });
   return true;
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== "toggle-translation") return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return;
+  if (!tab?.id || !isInjectableUrl(tab.url)) return;
 
   try {
+    await ensureContentScript(tab.id);
     await chrome.tabs.sendMessage(tab.id, { type: "CLEARLINGO_TOGGLE" });
   } catch {
-    // Browser-internal pages intentionally reject content scripts.
+    // Browser-internal pages and unapproved file URLs intentionally reject injection.
   }
 });

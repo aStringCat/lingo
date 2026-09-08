@@ -50,7 +50,7 @@ export function splitText(text, maxBytes = MAX_CHUNK_BYTES) {
 }
 
 export function createMyMemoryTranslator(fetchImpl = fetch) {
-  return async function translate(text, sourceLanguage, targetLanguage) {
+  return async function translate(text, sourceLanguage, targetLanguage, { signal } = {}) {
     const chunks = splitText(text);
     const translated = [];
 
@@ -62,7 +62,7 @@ export function createMyMemoryTranslator(fetchImpl = fetch) {
         mt: "1"
       });
 
-      const response = await fetchImpl(url);
+      const response = await fetchImpl(url, { signal });
       if (!response.ok) throw new Error(`翻译服务返回 ${response.status}`);
 
       const payload = await response.json();

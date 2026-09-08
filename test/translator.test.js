@@ -34,6 +34,18 @@ test("translator reports empty responses", async () => {
   await assert.rejects(() => translate("hello", "en", "zh-CN"), /未返回有效内容/);
 });
 
+test("translator forwards cancellation to fetch", async () => {
+  const controller = new AbortController();
+  const translate = createMyMemoryTranslator(async (_url, options) => {
+    assert.equal(options.signal, controller.signal);
+    throw new DOMException("cancelled", "AbortError");
+  });
+  await assert.rejects(
+    () => translate("hello", "en", "zh-CN", { signal: controller.signal }),
+    { name: "AbortError" }
+  );
+});
+
 test("splitText counts UTF-8 bytes without breaking characters", () => {
   const source = "你好，世界。再见，世界。";
   const chunks = splitText(source, 15);

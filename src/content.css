@@ -1,11 +1,16 @@
 .clearlingo-managed > .clearlingo-original,
-.clearlingo-managed > .clearlingo-translation {
+.clearlingo-managed > .clearlingo-translation,
+.clearlingo-detached-host,
+.clearlingo-detached-host > .clearlingo-translation {
   display: block !important;
 }
 
-.clearlingo-managed > .clearlingo-translation {
+.clearlingo-managed > .clearlingo-translation,
+.clearlingo-detached-host > .clearlingo-translation {
+  position: relative !important;
   margin-block-start: 0.42em !important;
   padding-inline-start: 0.8em !important;
+  padding-inline-end: 3.6em !important;
   border-inline-start: 2px solid #35d6b3 !important;
   color: #536173 !important;
   font: inherit !important;
@@ -14,30 +19,94 @@
   font-weight: 400 !important;
   line-height: 1.65 !important;
   opacity: 1 !important;
+  cursor: text !important;
+  pointer-events: auto !important;
   text-decoration: none !important;
   text-transform: none !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  contain: layout style !important;
+}
+
+.clearlingo-translation-text {
+  color: inherit !important;
+  cursor: text !important;
+  text-decoration: none !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.clearlingo-copy {
+  position: absolute !important;
+  inset-block-start: 0 !important;
+  inset-inline-end: 0 !important;
+  padding: 2px 7px !important;
+  border: 1px solid rgb(100 116 139 / 24%) !important;
+  border-radius: 999px !important;
+  background: rgb(255 255 255 / 88%) !important;
+  color: #64748b !important;
+  cursor: pointer !important;
+  font: 500 11px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  opacity: 0 !important;
+  transition: opacity 120ms ease, background-color 120ms ease !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.clearlingo-translation:hover > .clearlingo-copy,
+.clearlingo-copy:focus-visible {
+  opacity: 1 !important;
+}
+
+.clearlingo-copy:hover {
+  background: #fff !important;
+}
+
+.clearlingo-copy-fallback {
+  position: fixed !important;
+  inset: -9999px auto auto -9999px !important;
+}
+
+.clearlingo-source-hidden {
+  display: none !important;
 }
 
 .clearlingo-managed[data-clearlingo-display="translation"] > .clearlingo-original {
   display: none !important;
 }
 
-.clearlingo-managed[data-clearlingo-display="translation"] > .clearlingo-translation {
+.clearlingo-managed[data-clearlingo-display="translation"] > .clearlingo-translation,
+.clearlingo-detached-host[data-clearlingo-display="translation"] > .clearlingo-translation {
   margin-block-start: 0 !important;
 }
 
 @media (prefers-color-scheme: dark) {
-  .clearlingo-managed > .clearlingo-translation {
+  .clearlingo-managed > .clearlingo-translation,
+  .clearlingo-detached-host > .clearlingo-translation {
     color: #aebdca !important;
     border-inline-start-color: #48e0be !important;
   }
+
+  .clearlingo-copy {
+    border-color: rgb(148 163 184 / 30%) !important;
+    background: rgb(15 23 42 / 88%) !important;
+    color: #cbd5e1 !important;
+  }
+
+  .clearlingo-copy:hover { background: #0f172a !important; }
+}
+
+@media (hover: none) {
+  .clearlingo-copy { opacity: 0.72 !important; }
 }
 
 .clearlingo-ui {
   position: fixed !important;
   z-index: 2147483647 !important;
-  left: 50% !important;
-  bottom: 28px !important;
+  top: max(16px, env(safe-area-inset-top)) !important;
+  right: max(16px, env(safe-area-inset-right)) !important;
+  bottom: auto !important;
+  left: auto !important;
   max-width: min(420px, calc(100vw - 32px)) !important;
   padding: 10px 14px !important;
   border: 1px solid rgb(255 255 255 / 16%) !important;
@@ -48,14 +117,17 @@
   font: 500 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   opacity: 0 !important;
   pointer-events: none !important;
-  transform: translate(-50%, 12px) !important;
+  transform: translateY(-8px) !important;
   transition: opacity 160ms ease, transform 160ms ease !important;
+  contain: layout style paint !important;
+  will-change: opacity, transform !important;
 }
 
 .clearlingo-ui-visible {
   opacity: 1 !important;
-  transform: translate(-50%, 0) !important;
+  transform: translateY(0) !important;
 }
 
+.clearlingo-ui[data-tone="loading"] { background: rgb(37 99 235 / 94%) !important; }
 .clearlingo-ui[data-tone="success"] { background: rgb(4 120 87 / 94%) !important; }
 .clearlingo-ui[data-tone="error"] { background: rgb(185 28 28 / 94%) !important; }
