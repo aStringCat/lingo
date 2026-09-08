@@ -1,4 +1,5 @@
-const ONLINE_ORIGIN = "https://api.mymemory.translated.net/*";
+import { isInjectableUrl, ONLINE_ORIGIN } from "../src/shared.js";
+
 const DEFAULT_SETTINGS = {
   targetLanguage: "zh-CN",
   displayMode: "bilingual",
@@ -10,7 +11,7 @@ const targetLanguage = document.querySelector("#target-language");
 const onlineFallback = document.querySelector("#online-fallback");
 const status = document.querySelector("#status");
 const modeInputs = [...document.querySelectorAll("[name='display-mode']")];
-let pageState = { active: false, busy: false, count: 0, waiting: 0, error: "" };
+let pageState = { active: false, busy: false, count: 0, error: "" };
 let refreshTimer = null;
 
 async function activeTab() {
@@ -19,12 +20,7 @@ async function activeTab() {
 }
 
 function isSupportedPage(tab) {
-  const url = tab?.url ?? "";
-  return Boolean(
-    tab?.id
-    && /^(?:https?|file):/iu.test(url)
-    && !/^https:\/\/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)(?:\/|$)/iu.test(url)
-  );
+  return Boolean(tab?.id && isInjectableUrl(tab.url));
 }
 
 async function sendToPage(message, { inject = false } = {}) {
@@ -62,7 +58,7 @@ function scheduleStateRefresh() {
       renderState();
     } catch {
       // Navigation can remove the injected script; the next click will inject again.
-      pageState = { active: false, busy: false, count: 0, waiting: 0, error: "" };
+      pageState = { active: false, busy: false, count: 0, error: "" };
       renderState();
     }
     scheduleStateRefresh();
@@ -88,7 +84,7 @@ toggleButton.addEventListener("click", async () => {
   try {
     if (pageState.active) {
       await sendToPage({ type: "LINGO_RESTORE" });
-      pageState = { active: false, busy: false, count: 0, waiting: 0, error: "" };
+      pageState = { active: false, busy: false, count: 0, error: "" };
     } else {
       const settings = await saveSettings();
       const response = await sendToPage(
@@ -96,7 +92,7 @@ toggleButton.addEventListener("click", async () => {
         { inject: true }
       );
       if (!response?.ok) throw new Error(response?.error || "翻译失败");
-      pageState = { active: true, busy: true, count: response.count ?? 0, waiting: 0, error: "" };
+      pageState = { active: true, busy: true, count: response.count ?? 0, error: "" };
     }
   } catch (error) {
     pageState = { ...pageState, busy: false, error: error.message };

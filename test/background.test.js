@@ -21,7 +21,8 @@ globalThis.chrome = {
   commands: { onCommand: { addListener() {} } }
 };
 
-const { ensureContentScript, isInjectableUrl } = await import("../src/background.js");
+const { ensureContentScript } = await import("../src/background.js");
+const { isInjectableUrl } = await import("../src/shared.js");
 
 test("injection accepts ordinary web and file pages only", () => {
   assert.equal(isInjectableUrl("https://example.com"), true);

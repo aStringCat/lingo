@@ -9,12 +9,16 @@ function byteLength(text) {
 function splitOversizedSegment(segment, maxBytes) {
   const chunks = [];
   let current = "";
+  let currentBytes = 0;
   for (const character of segment) {
-    if (current && byteLength(current + character) > maxBytes) {
+    const characterBytes = byteLength(character);
+    if (current && currentBytes + characterBytes > maxBytes) {
       chunks.push(current);
       current = character;
+      currentBytes = characterBytes;
     } else {
       current += character;
+      currentBytes += characterBytes;
     }
   }
   if (current) chunks.push(current);
@@ -28,20 +32,25 @@ export function splitText(text, maxBytes = MAX_CHUNK_BYTES) {
     .map(({ segment }) => segment);
   const chunks = [];
   let current = "";
+  let currentBytes = 0;
 
   for (const sentence of sentences) {
-    if (byteLength(sentence) > maxBytes) {
+    const sentenceBytes = byteLength(sentence);
+    if (sentenceBytes > maxBytes) {
       if (current) chunks.push(current);
       chunks.push(...splitOversizedSegment(sentence, maxBytes));
       current = "";
+      currentBytes = 0;
       continue;
     }
 
-    if (byteLength(current + sentence) > maxBytes) {
+    if (currentBytes + sentenceBytes > maxBytes) {
       chunks.push(current);
       current = sentence;
+      currentBytes = sentenceBytes;
     } else {
       current += sentence;
+      currentBytes += sentenceBytes;
     }
   }
 

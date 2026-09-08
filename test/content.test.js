@@ -65,16 +65,18 @@ test("a block enclosed by a link renders its translation outside the link", () =
   prepareRender(api);
   const source = dom.window.document.querySelector("#source");
   const link = dom.window.document.querySelector("#card");
+  api.state.settings.displayMode = "translation";
 
   api.renderTranslation(source, "打开文章", 1);
   const translation = dom.window.document.querySelector(".lingo-translation");
   assert.equal(translation.closest("a"), null);
   assert.equal(link.nextElementSibling.classList.contains("lingo-detached-host"), true);
   assert.equal(source.textContent, "Open story");
+  assert.equal(link.classList.contains("lingo-source-hidden"), true);
 
   api.restore({ silent: true });
   assert.equal(link.nextElementSibling, null);
-  assert.equal(link.classList.contains("lingo-linked-source"), false);
+  assert.equal(link.classList.contains("lingo-source-hidden"), false);
   dom.window.close();
 });
 

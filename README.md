@@ -44,6 +44,7 @@ xcrun safari-web-extension-converter ./lingo \
 
 - `src/content.js`：按需注入、正文发现、DOM 呈现、动态内容监听与还原
 - `src/background.js`：注入协调、并发控制、LRU 内存缓存和可取消的跨域翻译请求
+- `src/shared.js`：弹窗与后台共用的权限和页面规则
 - `src/translator.js`：文本分块与翻译服务适配
 - `popup/`：扩展面板和同步设置
 

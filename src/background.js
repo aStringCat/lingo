@@ -1,6 +1,6 @@
 import { createMyMemoryTranslator } from "./translator.js";
+import { isInjectableUrl, ONLINE_ORIGIN } from "./shared.js";
 
-const ONLINE_ORIGIN = "https://api.mymemory.translated.net/*";
 const CACHE_LIMIT = 500;
 const CONCURRENCY = 4;
 const MAX_BATCH_SIZE = 32;
@@ -76,11 +76,6 @@ function validateTranslationMessage(message) {
   if (!Number.isInteger(message.sessionId) || message.sessionId < 1) {
     throw new Error("翻译会话无效");
   }
-}
-
-export function isInjectableUrl(url = "") {
-  if (!/^(?:https?|file):/iu.test(url)) return false;
-  return !/^https:\/\/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)(?:\/|$)/iu.test(url);
 }
 
 export async function ensureContentScript(tabId) {

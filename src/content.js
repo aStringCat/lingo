@@ -14,6 +14,7 @@
   const LAZY_LOAD_MARGIN = 800;
   const TRANSLATION_QUEUE_DELAY = 80;
   const DYNAMIC_SCAN_DELAY = 250;
+  let toastTimer = null;
 
   class ElementQueue {
     constructor() {
@@ -69,7 +70,6 @@
     scanTimer: null,
     scanUsesIdleCallback: false,
     translationTask: null,
-    startTask: null,
     sessionId: 0,
     sourceLanguage: "en",
     localTranslator: null
@@ -174,10 +174,10 @@
     toast.textContent = message;
     toast.dataset.tone = tone;
     toast.classList.add("lingo-ui-visible");
-    clearTimeout(showToast.timer);
-    showToast.timer = null;
+    clearTimeout(toastTimer);
+    toastTimer = null;
     if (duration > 0) {
-      showToast.timer = setTimeout(() => toast.classList.remove("lingo-ui-visible"), duration);
+      toastTimer = setTimeout(() => toast.classList.remove("lingo-ui-visible"), duration);
     }
   }
 
@@ -208,7 +208,7 @@
     text.textContent = translatedText;
 
     const copyButton = document.createElement("button");
-    copyButton.className = "lingo-copy lingo-ui-control";
+    copyButton.className = "lingo-copy";
     copyButton.type = "button";
     copyButton.textContent = "复制";
     copyButton.setAttribute("aria-label", "复制这段译文");
@@ -249,9 +249,8 @@
     if (enclosingLink) {
       const host = getLinkHost(enclosingLink);
       host.append(translation);
-      enclosingLink.classList.add("lingo-linked-source");
       enclosingLink.classList.toggle("lingo-source-hidden", state.settings.displayMode === "translation");
-      state.translated.set(element, { kind: "detached", translation, enclosingLink });
+      state.translated.set(element, { kind: "detached", translation });
       return;
     }
 
@@ -450,7 +449,6 @@
     state.settings = settings;
     state.queuePaused = false;
     const sessionId = ++state.sessionId;
-    document.documentElement.classList.add("lingo-active");
     showToast("正在分析网页…", "loading", { duration: 0 });
 
     try {
@@ -513,7 +511,6 @@
     state.queueTimer = null;
     state.scanQueue.clear();
     state.translationTask = null;
-    state.startTask = null;
     state.localTranslator?.destroy?.();
     state.localTranslator = null;
     void chrome.runtime.sendMessage({
@@ -534,12 +531,11 @@
     }
     for (const [link, host] of state.linkHosts) {
       host.remove();
-      link.classList.remove("lingo-linked-source", "lingo-source-hidden");
+      link.classList.remove("lingo-source-hidden");
     }
 
     state.translated.clear();
     state.linkHosts.clear();
-    document.documentElement.classList.remove("lingo-active");
     if (!silent) showToast("已还原原网页", "success");
   }
 
@@ -549,11 +545,7 @@
 
   function beginStart(settings) {
     if (state.active) return;
-    const task = start(settings);
-    state.startTask = task;
-    task.finally(() => {
-      if (state.startTask === task) state.startTask = null;
-    });
+    void start(settings);
   }
 
   async function toggle(settings) {
@@ -570,8 +562,7 @@
       sendResponse({
         active: state.active,
         busy: state.busy,
-        count: state.translated.size,
-        waiting: state.waiting.size
+        count: state.translated.size
       });
       return false;
     }
