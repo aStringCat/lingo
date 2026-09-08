@@ -1,4 +1,4 @@
-# 清译 ClearLingo
+# Lingo
 
 一款小而清晰的双语网页翻译扩展。它只识别正文式文本块，按段落在原文下方插入译文，并继续监听动态加载的新内容。
 
@@ -21,7 +21,7 @@
 1. 打开扩展管理页（Chrome 为 `chrome://extensions`）。
 2. 开启“开发者模式”。
 3. 选择“加载已解压的扩展程序”，选中本目录。
-4. 打开普通网页，点击工具栏中的清译图标，再点击“翻译当前网页”。
+4. 打开普通网页，点击工具栏中的 Lingo 图标，再点击“翻译当前网页”。
 
 扩展在打开网页或仅打开面板时不会读取页面。只有点击翻译按钮或使用快捷键后，才会通过 `activeTab` 临时访问并注入当前标签页。若浏览器本地翻译不可用，可以在面板中主动开启“在线翻译兜底”；关闭后会同时撤销对应网站权限。
 
@@ -32,10 +32,10 @@
 需要较新的 macOS 与 Xcode。在项目上一级目录执行：
 
 ```sh
-xcrun safari-web-extension-converter ./translate-tool \
-  --project-location ./ClearLingo-Safari \
-  --app-name ClearLingo \
-  --bundle-identifier com.example.clearlingo
+xcrun safari-web-extension-converter ./lingo \
+  --project-location ./Lingo-Safari \
+  --app-name Lingo \
+  --bundle-identifier com.example.lingo
 ```
 
 随后在 Xcode 中选择签名团队并运行生成的 macOS/iOS 容器 App，再到 Safari 设置中启用扩展。发布前请把示例 bundle identifier 换成你自己的反向域名标识。

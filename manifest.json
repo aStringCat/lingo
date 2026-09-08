@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "清译 ClearLingo",
-  "short_name": "ClearLingo",
+  "name": "Lingo",
+  "short_name": "Lingo",
   "version": "1.1.0",
   "description": "简洁的沉浸式双语网页翻译扩展。",
   "minimum_chrome_version": "138",
@@ -12,7 +12,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "清译 ClearLingo",
+    "default_title": "Lingo",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",

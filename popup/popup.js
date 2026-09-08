@@ -31,7 +31,7 @@ async function sendToPage(message, { inject = false } = {}) {
   const tab = await activeTab();
   if (!isSupportedPage(tab)) throw new Error("浏览器限制访问此页面");
   if (inject) {
-    const response = await chrome.runtime.sendMessage({ type: "CLEARLINGO_ENSURE_TAB", tabId: tab.id });
+    const response = await chrome.runtime.sendMessage({ type: "LINGO_ENSURE_TAB", tabId: tab.id });
     if (!response?.ok) throw new Error(response?.error || "无法载入翻译工具");
   }
   return chrome.tabs.sendMessage(tab.id, message);
@@ -56,7 +56,7 @@ function scheduleStateRefresh() {
     try {
       pageState = {
         ...pageState,
-        ...await sendToPage({ type: "CLEARLINGO_GET_STATE" }),
+        ...await sendToPage({ type: "LINGO_GET_STATE" }),
         error: ""
       };
       renderState();
@@ -87,12 +87,12 @@ toggleButton.addEventListener("click", async () => {
   toggleButton.disabled = true;
   try {
     if (pageState.active) {
-      await sendToPage({ type: "CLEARLINGO_RESTORE" });
+      await sendToPage({ type: "LINGO_RESTORE" });
       pageState = { active: false, busy: false, count: 0, waiting: 0, error: "" };
     } else {
       const settings = await saveSettings();
       const response = await sendToPage(
-        { type: "CLEARLINGO_TRANSLATE_PAGE", settings },
+        { type: "LINGO_TRANSLATE_PAGE", settings },
         { inject: true }
       );
       if (!response?.ok) throw new Error(response?.error || "翻译失败");
@@ -111,7 +111,7 @@ targetLanguage.addEventListener("change", async () => {
   try {
     const settings = await saveSettings();
     if (!pageState.active) return;
-    await sendToPage({ type: "CLEARLINGO_RESTART", settings });
+    await sendToPage({ type: "LINGO_RESTART", settings });
     pageState = { ...pageState, busy: true, count: 0, error: "" };
     renderState();
   } catch (error) {
@@ -124,7 +124,7 @@ for (const input of modeInputs) {
     if (!input.checked) return;
     const settings = await saveSettings();
     if (pageState.active) {
-      await sendToPage({ type: "CLEARLINGO_UPDATE_DISPLAY_MODE", displayMode: settings.displayMode });
+      await sendToPage({ type: "LINGO_UPDATE_DISPLAY_MODE", displayMode: settings.displayMode });
     }
   });
 }
@@ -142,7 +142,7 @@ onlineFallback.addEventListener("change", async () => {
   const settings = await saveSettings();
   if (pageState.active) {
     await sendToPage({
-      type: "CLEARLINGO_UPDATE_ONLINE_FALLBACK",
+      type: "LINGO_UPDATE_ONLINE_FALLBACK",
       onlineFallback: settings.onlineFallback
     });
   }
@@ -163,7 +163,7 @@ async function init() {
     pageState = { ...pageState, error: "浏览器限制访问此页面" };
   } else {
     try {
-      pageState = { ...pageState, ...await chrome.tabs.sendMessage(tab.id, { type: "CLEARLINGO_GET_STATE" }) };
+      pageState = { ...pageState, ...await chrome.tabs.sendMessage(tab.id, { type: "LINGO_GET_STATE" }) };
     } catch {
       // Opening the popup must not inject or read the page.
     }

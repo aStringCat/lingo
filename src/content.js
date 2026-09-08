@@ -1,5 +1,5 @@
 (() => {
-  const INJECTION_FLAG = "__clearlingoContentInjected";
+  const INJECTION_FLAG = "__lingoContentInjected";
   if (globalThis[INJECTION_FLAG]) return;
   globalThis[INJECTION_FLAG] = true;
 
@@ -8,7 +8,7 @@
     "nav", "header", "footer", "aside", "form", "dialog",
     "pre", "code", "kbd", "samp", "script", "style", "noscript",
     "textarea", "input", "select", "button", "[contenteditable]",
-    "[aria-hidden='true']", ".clearlingo-managed", ".clearlingo-ui"
+    "[aria-hidden='true']", ".lingo-managed", ".lingo-ui"
   ].join(",");
   const BATCH_SIZE = 8;
   const LAZY_LOAD_MARGIN = 800;
@@ -160,10 +160,10 @@
   }
 
   function createToast() {
-    let host = document.querySelector(".clearlingo-ui");
+    let host = document.querySelector(".lingo-ui");
     if (host) return host;
     host = document.createElement("div");
-    host.className = "clearlingo-ui";
+    host.className = "lingo-ui";
     host.setAttribute("aria-live", "polite");
     document.documentElement.append(host);
     return host;
@@ -173,11 +173,11 @@
     const toast = createToast();
     toast.textContent = message;
     toast.dataset.tone = tone;
-    toast.classList.add("clearlingo-ui-visible");
+    toast.classList.add("lingo-ui-visible");
     clearTimeout(showToast.timer);
     showToast.timer = null;
     if (duration > 0) {
-      showToast.timer = setTimeout(() => toast.classList.remove("clearlingo-ui-visible"), duration);
+      showToast.timer = setTimeout(() => toast.classList.remove("lingo-ui-visible"), duration);
     }
   }
 
@@ -187,7 +187,7 @@
       return;
     } catch {
       const input = document.createElement("textarea");
-      input.className = "clearlingo-copy-fallback";
+      input.className = "lingo-copy-fallback";
       input.value = text;
       document.documentElement.append(input);
       input.select();
@@ -199,16 +199,16 @@
 
   function createTranslation(translatedText) {
     const translation = document.createElement("span");
-    translation.className = "clearlingo-translation";
+    translation.className = "lingo-translation";
     translation.lang = state.settings.targetLanguage;
     translation.dir = "auto";
 
     const text = document.createElement("span");
-    text.className = "clearlingo-translation-text";
+    text.className = "lingo-translation-text";
     text.textContent = translatedText;
 
     const copyButton = document.createElement("button");
-    copyButton.className = "clearlingo-copy clearlingo-ui-control";
+    copyButton.className = "lingo-copy lingo-ui-control";
     copyButton.type = "button";
     copyButton.textContent = "复制";
     copyButton.setAttribute("aria-label", "复制这段译文");
@@ -234,8 +234,8 @@
     let host = state.linkHosts.get(anchor);
     if (host?.isConnected) return host;
     host = document.createElement("span");
-    host.className = "clearlingo-detached-host clearlingo-managed";
-    host.dataset.clearlingoDisplay = state.settings.displayMode;
+    host.className = "lingo-detached-host lingo-managed";
+    host.dataset.lingoDisplay = state.settings.displayMode;
     anchor.after(host);
     state.linkHosts.set(anchor, host);
     return host;
@@ -249,16 +249,16 @@
     if (enclosingLink) {
       const host = getLinkHost(enclosingLink);
       host.append(translation);
-      enclosingLink.classList.add("clearlingo-linked-source");
-      enclosingLink.classList.toggle("clearlingo-source-hidden", state.settings.displayMode === "translation");
+      enclosingLink.classList.add("lingo-linked-source");
+      enclosingLink.classList.toggle("lingo-source-hidden", state.settings.displayMode === "translation");
       state.translated.set(element, { kind: "detached", translation, enclosingLink });
       return;
     }
 
     const original = document.createElement("span");
-    original.className = "clearlingo-original";
-    element.classList.add("clearlingo-managed");
-    element.dataset.clearlingoDisplay = state.settings.displayMode;
+    original.className = "lingo-original";
+    element.classList.add("lingo-managed");
+    element.dataset.lingoDisplay = state.settings.displayMode;
     while (element.firstChild) original.append(element.firstChild);
     element.append(original, translation);
     state.translated.set(element, { kind: "inline", original, translation });
@@ -286,7 +286,7 @@
       }
       if (!state.active || sessionId !== state.sessionId) return null;
       const response = await chrome.runtime.sendMessage({
-        type: "CLEARLINGO_TRANSLATE_TEXTS",
+        type: "LINGO_TRANSLATE_TEXTS",
         texts,
         sourceLanguage: state.sourceLanguage,
         targetLanguage: state.settings.targetLanguage,
@@ -435,7 +435,7 @@
       if (!state.active) return;
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
-          if (!(node instanceof HTMLElement) || node.closest(".clearlingo-managed, .clearlingo-ui")) continue;
+          if (!(node instanceof HTMLElement) || node.closest(".lingo-managed, .lingo-ui")) continue;
           scheduleScan(node);
         }
       }
@@ -450,7 +450,7 @@
     state.settings = settings;
     state.queuePaused = false;
     const sessionId = ++state.sessionId;
-    document.documentElement.classList.add("clearlingo-active");
+    document.documentElement.classList.add("lingo-active");
     showToast("正在分析网页…", "loading", { duration: 0 });
 
     try {
@@ -488,11 +488,11 @@
     if (!state.settings || !["bilingual", "translation"].includes(displayMode)) return;
     state.settings.displayMode = displayMode;
     for (const [element, record] of state.translated) {
-      if (record.kind === "inline") element.dataset.clearlingoDisplay = displayMode;
+      if (record.kind === "inline") element.dataset.lingoDisplay = displayMode;
     }
     for (const [link, host] of state.linkHosts) {
-      host.dataset.clearlingoDisplay = displayMode;
-      link.classList.toggle("clearlingo-source-hidden", displayMode === "translation");
+      host.dataset.lingoDisplay = displayMode;
+      link.classList.toggle("lingo-source-hidden", displayMode === "translation");
     }
   }
 
@@ -517,7 +517,7 @@
     state.localTranslator?.destroy?.();
     state.localTranslator = null;
     void chrome.runtime.sendMessage({
-      type: "CLEARLINGO_CANCEL_TRANSLATIONS",
+      type: "LINGO_CANCEL_TRANSLATIONS",
       sessionId: cancelledSessionId
     }).catch(() => {});
 
@@ -526,20 +526,20 @@
         while (record.original.firstChild) element.insertBefore(record.original.firstChild, record.original);
         record.original.remove();
         record.translation.remove();
-        element.classList.remove("clearlingo-managed");
-        delete element.dataset.clearlingoDisplay;
+        element.classList.remove("lingo-managed");
+        delete element.dataset.lingoDisplay;
       } else {
         record.translation.remove();
       }
     }
     for (const [link, host] of state.linkHosts) {
       host.remove();
-      link.classList.remove("clearlingo-linked-source", "clearlingo-source-hidden");
+      link.classList.remove("lingo-linked-source", "lingo-source-hidden");
     }
 
     state.translated.clear();
     state.linkHosts.clear();
-    document.documentElement.classList.remove("clearlingo-active");
+    document.documentElement.classList.remove("lingo-active");
     if (!silent) showToast("已还原原网页", "success");
   }
 
@@ -562,11 +562,11 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === "CLEARLINGO_PING") {
+    if (message?.type === "LINGO_PING") {
       sendResponse({ ok: true });
       return false;
     }
-    if (message?.type === "CLEARLINGO_GET_STATE") {
+    if (message?.type === "LINGO_GET_STATE") {
       sendResponse({
         active: state.active,
         busy: state.busy,
@@ -575,22 +575,22 @@
       });
       return false;
     }
-    if (message?.type === "CLEARLINGO_RESTORE") {
+    if (message?.type === "LINGO_RESTORE") {
       restore();
       sendResponse({ ok: true, active: false, count: 0 });
       return false;
     }
-    if (message?.type === "CLEARLINGO_UPDATE_DISPLAY_MODE") {
+    if (message?.type === "LINGO_UPDATE_DISPLAY_MODE") {
       updateDisplayMode(message.displayMode);
       sendResponse({ ok: true });
       return false;
     }
-    if (message?.type === "CLEARLINGO_UPDATE_ONLINE_FALLBACK") {
+    if (message?.type === "LINGO_UPDATE_ONLINE_FALLBACK") {
       if (state.settings) {
         state.settings.onlineFallback = Boolean(message.onlineFallback);
         if (!state.settings.onlineFallback) {
           void chrome.runtime.sendMessage({
-            type: "CLEARLINGO_CANCEL_TRANSLATIONS",
+            type: "LINGO_CANCEL_TRANSLATIONS",
             sessionId: state.sessionId
           }).catch(() => {});
         } else if (state.queuePaused) {
@@ -601,18 +601,18 @@
       sendResponse({ ok: true });
       return false;
     }
-    if (message?.type === "CLEARLINGO_RESTART") {
+    if (message?.type === "LINGO_RESTART") {
       restore({ silent: true });
       beginStart(message.settings);
       sendResponse({ ok: true, active: true, count: 0 });
       return false;
     }
-    if (message?.type === "CLEARLINGO_TRANSLATE_PAGE") {
+    if (message?.type === "LINGO_TRANSLATE_PAGE") {
       beginStart(message.settings);
       sendResponse({ ok: true, active: true, count: state.translated.size });
       return false;
     }
-    if (message?.type === "CLEARLINGO_TOGGLE") {
+    if (message?.type === "LINGO_TOGGLE") {
       toggle(message.settings)
         .then(() => sendResponse({ ok: true, active: state.active, count: state.translated.size }))
         .catch((error) => sendResponse({ ok: false, error: error.message }));
@@ -621,8 +621,8 @@
     return false;
   });
 
-  if (globalThis.__CLEARLINGO_TEST__) {
-    globalThis.__clearlingoTest = {
+  if (globalThis.__LINGO_TEST__) {
+    globalThis.__lingoTest = {
       ElementQueue,
       collect,
       isTranslatable,

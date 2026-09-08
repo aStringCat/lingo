@@ -35,7 +35,7 @@ test("existing content script is reused without reinjection", async () => {
   calls.length = 0;
   pingSucceeds = true;
   await ensureContentScript(7);
-  assert.deepEqual(calls, [["message", "CLEARLINGO_PING"]]);
+  assert.deepEqual(calls, [["message", "LINGO_PING"]]);
 });
 
 test("missing content script receives CSS before JavaScript", async () => {
@@ -43,7 +43,7 @@ test("missing content script receives CSS before JavaScript", async () => {
   pingSucceeds = false;
   await ensureContentScript(7);
   assert.deepEqual(calls, [
-    ["message", "CLEARLINGO_PING"],
+    ["message", "LINGO_PING"],
     ["css", "src/content.css"],
     ["script", "src/content.js"]
   ]);

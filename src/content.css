@@ -1,12 +1,12 @@
-.clearlingo-managed > .clearlingo-original,
-.clearlingo-managed > .clearlingo-translation,
-.clearlingo-detached-host,
-.clearlingo-detached-host > .clearlingo-translation {
+.lingo-managed > .lingo-original,
+.lingo-managed > .lingo-translation,
+.lingo-detached-host,
+.lingo-detached-host > .lingo-translation {
   display: block !important;
 }
 
-.clearlingo-managed > .clearlingo-translation,
-.clearlingo-detached-host > .clearlingo-translation {
+.lingo-managed > .lingo-translation,
+.lingo-detached-host > .lingo-translation {
   position: relative !important;
   margin-block-start: 0.42em !important;
   padding-inline-start: 0.8em !important;
@@ -28,7 +28,7 @@
   contain: layout style !important;
 }
 
-.clearlingo-translation-text {
+.lingo-translation-text {
   color: inherit !important;
   cursor: text !important;
   text-decoration: none !important;
@@ -36,7 +36,7 @@
   -webkit-user-select: text !important;
 }
 
-.clearlingo-copy {
+.lingo-copy {
   position: absolute !important;
   inset-block-start: 0 !important;
   inset-inline-end: 0 !important;
@@ -53,54 +53,54 @@
   -webkit-user-select: none !important;
 }
 
-.clearlingo-translation:hover > .clearlingo-copy,
-.clearlingo-copy:focus-visible {
+.lingo-translation:hover > .lingo-copy,
+.lingo-copy:focus-visible {
   opacity: 1 !important;
 }
 
-.clearlingo-copy:hover {
+.lingo-copy:hover {
   background: #fff !important;
 }
 
-.clearlingo-copy-fallback {
+.lingo-copy-fallback {
   position: fixed !important;
   inset: -9999px auto auto -9999px !important;
 }
 
-.clearlingo-source-hidden {
+.lingo-source-hidden {
   display: none !important;
 }
 
-.clearlingo-managed[data-clearlingo-display="translation"] > .clearlingo-original {
+.lingo-managed[data-lingo-display="translation"] > .lingo-original {
   display: none !important;
 }
 
-.clearlingo-managed[data-clearlingo-display="translation"] > .clearlingo-translation,
-.clearlingo-detached-host[data-clearlingo-display="translation"] > .clearlingo-translation {
+.lingo-managed[data-lingo-display="translation"] > .lingo-translation,
+.lingo-detached-host[data-lingo-display="translation"] > .lingo-translation {
   margin-block-start: 0 !important;
 }
 
 @media (prefers-color-scheme: dark) {
-  .clearlingo-managed > .clearlingo-translation,
-  .clearlingo-detached-host > .clearlingo-translation {
+  .lingo-managed > .lingo-translation,
+  .lingo-detached-host > .lingo-translation {
     color: #aebdca !important;
     border-inline-start-color: #48e0be !important;
   }
 
-  .clearlingo-copy {
+  .lingo-copy {
     border-color: rgb(148 163 184 / 30%) !important;
     background: rgb(15 23 42 / 88%) !important;
     color: #cbd5e1 !important;
   }
 
-  .clearlingo-copy:hover { background: #0f172a !important; }
+  .lingo-copy:hover { background: #0f172a !important; }
 }
 
 @media (hover: none) {
-  .clearlingo-copy { opacity: 0.72 !important; }
+  .lingo-copy { opacity: 0.72 !important; }
 }
 
-.clearlingo-ui {
+.lingo-ui {
   position: fixed !important;
   z-index: 2147483647 !important;
   top: max(16px, env(safe-area-inset-top)) !important;
@@ -123,11 +123,11 @@
   will-change: opacity, transform !important;
 }
 
-.clearlingo-ui-visible {
+.lingo-ui-visible {
   opacity: 1 !important;
   transform: translateY(0) !important;
 }
 
-.clearlingo-ui[data-tone="loading"] { background: rgb(37 99 235 / 94%) !important; }
-.clearlingo-ui[data-tone="success"] { background: rgb(4 120 87 / 94%) !important; }
-.clearlingo-ui[data-tone="error"] { background: rgb(185 28 28 / 94%) !important; }
+.lingo-ui[data-tone="loading"] { background: rgb(37 99 235 / 94%) !important; }
+.lingo-ui[data-tone="success"] { background: rgb(4 120 87 / 94%) !important; }
+.lingo-ui[data-tone="error"] { background: rgb(185 28 28 / 94%) !important; }

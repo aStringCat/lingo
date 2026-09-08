@@ -86,7 +86,7 @@ export function isInjectableUrl(url = "") {
 export async function ensureContentScript(tabId) {
   if (!Number.isInteger(tabId) || tabId < 0) throw new Error("标签页无效");
   try {
-    const response = await chrome.tabs.sendMessage(tabId, { type: "CLEARLINGO_PING" });
+    const response = await chrome.tabs.sendMessage(tabId, { type: "LINGO_PING" });
     if (response?.ok) return;
   } catch {
     // No receiver means the user has not requested injection on this page yet.
@@ -119,20 +119,20 @@ async function handleTranslation(message, sender) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "CLEARLINGO_ENSURE_TAB") {
+  if (message?.type === "LINGO_ENSURE_TAB") {
     ensureContentScript(message.tabId)
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
-  if (message?.type === "CLEARLINGO_CANCEL_TRANSLATIONS") {
+  if (message?.type === "LINGO_CANCEL_TRANSLATIONS") {
     if (sender.tab?.id) cancelRequests(sender.tab.id, message.sessionId);
     sendResponse({ ok: true });
     return false;
   }
 
-  if (message?.type !== "CLEARLINGO_TRANSLATE_TEXTS") return false;
+  if (message?.type !== "LINGO_TRANSLATE_TEXTS") return false;
   handleTranslation(message, sender)
     .then((translations) => sendResponse({ ok: true, translations }))
     .catch((error) => {
@@ -149,7 +149,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 
   try {
     await ensureContentScript(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { type: "CLEARLINGO_TOGGLE" });
+    await chrome.tabs.sendMessage(tab.id, { type: "LINGO_TOGGLE" });
   } catch {
     // Browser-internal pages and unapproved file URLs intentionally reject injection.
   }

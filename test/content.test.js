@@ -12,7 +12,7 @@ function createPage(html = "") {
     url: "https://example.com/article"
   });
   const listeners = [];
-  dom.window.__CLEARLINGO_TEST__ = true;
+  dom.window.__LINGO_TEST__ = true;
   dom.window.chrome = {
     runtime: {
       onMessage: { addListener: (listener) => listeners.push(listener) },
@@ -21,7 +21,7 @@ function createPage(html = "") {
     storage: { sync: { get: async (defaults) => defaults } }
   };
   dom.window.eval(contentScript);
-  return { dom, listeners, api: dom.window.__clearlingoTest };
+  return { dom, listeners, api: dom.window.__lingoTest };
 }
 
 function prepareRender(api) {
@@ -48,15 +48,15 @@ test("translation is plain selectable text and preserves original nodes", () => 
   const originalLink = dom.window.document.querySelector("#link");
 
   api.renderTranslation(source, "阅读 https://example.com", 1);
-  const translation = source.querySelector(":scope > .clearlingo-translation");
-  assert.equal(translation.querySelector(".clearlingo-translation-text").textContent, "阅读 https://example.com");
+  const translation = source.querySelector(":scope > .lingo-translation");
+  assert.equal(translation.querySelector(".lingo-translation-text").textContent, "阅读 https://example.com");
   assert.equal(translation.querySelector("a"), null);
   assert.equal(source.querySelector("#link"), originalLink);
 
   api.restore({ silent: true });
   assert.equal(source.textContent, "Read more");
   assert.equal(source.querySelector("#link"), originalLink);
-  assert.equal(source.querySelector(".clearlingo-translation"), null);
+  assert.equal(source.querySelector(".lingo-translation"), null);
   dom.window.close();
 });
 
@@ -67,14 +67,14 @@ test("a block enclosed by a link renders its translation outside the link", () =
   const link = dom.window.document.querySelector("#card");
 
   api.renderTranslation(source, "打开文章", 1);
-  const translation = dom.window.document.querySelector(".clearlingo-translation");
+  const translation = dom.window.document.querySelector(".lingo-translation");
   assert.equal(translation.closest("a"), null);
-  assert.equal(link.nextElementSibling.classList.contains("clearlingo-detached-host"), true);
+  assert.equal(link.nextElementSibling.classList.contains("lingo-detached-host"), true);
   assert.equal(source.textContent, "Open story");
 
   api.restore({ silent: true });
   assert.equal(link.nextElementSibling, null);
-  assert.equal(link.classList.contains("clearlingo-linked-source"), false);
+  assert.equal(link.classList.contains("lingo-linked-source"), false);
   dom.window.close();
 });
 
